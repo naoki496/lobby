@@ -1,48 +1,130 @@
-/* home.js
- * HK LOBBY / kokugo-dojo - STATUS BAR
- * Reads shared localStorage key: "hklobby.v1.cardCounts"
- * and renders summary (rank, owned cards, breakdown) into DOM.
+/* home.js (HK LOBBY)
+ * - STATUS BAR (localStorage: hklobby.v1.cardCounts)
+ * - Optional: cards-hub totals (manifest + csv) with multi-schema support
+ * - Optional: whatsnew.json loader (404 safe)
  *
- * Requirement:
- * - Put this file in kokugo-dojo/ (same directory as index.html)
- * - index.html should have containers with IDs used below,
- *   OR this script will auto-inject a minimal status bar.
+ * Put this file in /lobby/home.js
+ * Ensure index.html loads: <script src="./home.js" defer></script>
  */
 
 (() => {
   "use strict";
 
-  // ===== Shared storage key (COMMON) =====
+  // =========================
+  // CONFIG
+  // =========================
+
+  // ✅ 共通キー（ここが “唯一の真実”）
   const KEY_CARD_COUNTS = "hklobby.v1.cardCounts";
 
-  // Optional: if you ever used other keys, list them here for read-only fallback.
-  const FALLBACK_KEYS = [
-    // "kobunQuiz.v1.cardCounts",
-    // "bungakusiQuiz.v1.cardCounts",
-  ];
+  // ✅ cards-hub（同一オリジン配下 /cards-hub/ を想定）
+  const CARDS_HUB_BASE = "/cards-hub/";
+  const CARDS_MANIFEST_PATH = "cards-manifest.json";
 
-  // ===== Rank model (simple & deterministic) =====
-  // You can tweak thresholds without touching any other part.
+  // ✅ whatsnew（/lobby/whatsnew.json）
+  const WHATSNEW_URL = "./whatsnew.json";
+
+  // ===== rank thresholds (by owned unique card types) =====
   const RANK_TABLE = [
     { name: "見習い", min: 0 },
     { name: "一人前", min: 10 },
-    { name: "職人",   min: 30 },
-    { name: "達人",   min: 60 },
-    { name: "神",     min: 100 },
+    { name: "職人", min: 30 },
+    { name: "達人", min: 60 },
+    { name: "神", min: 100 },
   ];
 
-  // ===== DOM ids (preferred) =====
-  // If these don't exist, a bar will be injected at top of <main> or <body>.
-  const DOM_IDS = {
-    wrap: "statusBar",
+  // =========================
+  // DOM (auto-inject)
+  // =========================
+
+  const IDS = {
+    bar: "statusBar",
     rank: "statusRank",
     owned: "statusOwned",
-    detail: "statusDetail",
     hint: "statusHint",
+    detail: "statusDetail",
     reload: "statusReload",
+    whatsnew: "whatsNewBox",
   };
 
-  // ===== Storage safe access =====
+  function qs(sel) { return document.querySelector(sel); }
+  function el(id) { return document.getElementById(id); }
+
+  function ensureStatusBar() {
+    const existing = el(IDS.bar);
+    if (existing) return existing;
+
+    const bar = document.createElement("section");
+    bar.id = IDS.bar;
+    bar.setAttribute("role", "region");
+    bar.setAttribute("aria-label", "学習ステータス");
+
+    bar.innerHTML = `
+      <div class="sb-inner">
+        <div class="sb-left">
+          <div class="sb-title">STATUS</div>
+          <div class="sb-kpis">
+            <div class="sb-kpi">
+              <div class="sb-kpi-label">RANK</div>
+              <div id="${IDS.rank}" class="sb-kpi-value">--</div>
+            </div>
+            <div class="sb-kpi">
+              <div class="sb-kpi-label">CARDS</div>
+              <div id="${IDS.owned}" class="sb-kpi-value">--</div>
+            </div>
+          </div>
+          <div id="${IDS.hint}" class="sb-hint"></div>
+        </div>
+        <div class="sb-right">
+          <button id="${IDS.reload}" class="sb-btn" type="button" aria-label="再読み込み">↻</button>
+        </div>
+      </div>
+      <div id="${IDS.detail}" class="sb-detail" aria-live="polite"></div>
+    `;
+
+    // Prefer: .hero or main top. Fallback: body top.
+    const hero = qs(".hero") || qs("main");
+    if (hero) hero.insertAdjacentElement("afterbegin", bar);
+    else document.body.insertAdjacentElement("afterbegin", bar);
+
+    return bar;
+  }
+
+  function ensureWhatsNewBox() {
+    const existing = el(IDS.whatsnew);
+    if (existing) return existing;
+
+    // If index has a placeholder, prefer it.
+    const mount = qs("#missionBrief") || qs(".mission-brief") || qs("main") || document.body;
+
+    const box = document.createElement("section");
+    box.id = IDS.whatsnew;
+    box.className = "wn-box";
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", "MISSION BRIEF");
+
+    box.innerHTML = `
+      <div class="wn-head">
+        <div class="wn-title">MISSION BRIEF</div>
+        <div class="wn-sub">WHAT'S NEW</div>
+      </div>
+      <div class="wn-body" id="wnBody">
+        <div class="wn-item muted">更新情報を読み込み中…</div>
+      </div>
+    `;
+
+    // Try: insert near top but after status bar if exists
+    const sb = el(IDS.bar);
+    if (sb && sb.parentElement) sb.insertAdjacentElement("afterend", box);
+    else mount.insertAdjacentElement("afterbegin", box);
+
+    return box;
+  }
+
+  // =========================
+  // UTIL
+  // =========================
+
   function storageAvailable() {
     try {
       const x = "__storage_test__";
@@ -54,115 +136,26 @@
     }
   }
 
-  function readRaw(key) {
+  function readJsonFromLocalStorage(key) {
     if (!storageAvailable()) return null;
-    return localStorage.getItem(key);
-  }
-
-  function parseCounts(raw) {
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     try {
       const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== "object") return null;
-      return obj;
+      return obj && typeof obj === "object" ? obj : null;
     } catch {
       return null;
     }
   }
 
-  function loadCounts() {
-    // 1) Prefer common key
-    const primary = parseCounts(readRaw(KEY_CARD_COUNTS));
-    if (primary) return { counts: primary, sourceKey: KEY_CARD_COUNTS };
-
-    // 2) Fallback keys (read-only)
-    for (const k of FALLBACK_KEYS) {
-      const c = parseCounts(readRaw(k));
-      if (c) return { counts: c, sourceKey: k };
-    }
-
-    return { counts: {}, sourceKey: null };
+  function writeText(id, text) {
+    const node = el(id);
+    if (node) node.textContent = text;
   }
 
-  // ===== Aggregation =====
-  function summarize(countsObj) {
-    const ids = Object.keys(countsObj || {});
-    let ownedTypes = 0;
-    let ownedTotal = 0;
-
-    // sanitize: only finite >=1
-    const sanitized = {};
-    for (const id of ids) {
-      const n = Number(countsObj[id]);
-      if (!Number.isFinite(n) || n <= 0) continue;
-      sanitized[id] = Math.floor(n);
-      ownedTypes += 1;
-      ownedTotal += Math.floor(n);
-    }
-
-    return { ownedTypes, ownedTotal, sanitized };
-  }
-
-  function calcRank(ownedTypes) {
-    let cur = RANK_TABLE[0].name;
-    for (const row of RANK_TABLE) {
-      if (ownedTypes >= row.min) cur = row.name;
-    }
-    return cur;
-  }
-
-  // ===== Rendering =====
-  function ensureBar() {
-    // If the user already has markup, use it.
-    const existing = document.getElementById(DOM_IDS.wrap);
-    if (existing) return existing;
-
-    // Otherwise inject a minimal bar (non-destructive)
-    const bar = document.createElement("section");
-    bar.id = DOM_IDS.wrap;
-    bar.setAttribute("role", "region");
-    bar.setAttribute("aria-label", "学習ステータス");
-
-    // Minimal structure; styling is expected to be in style.css
-    bar.innerHTML = `
-      <div class="sb-inner">
-        <div class="sb-left">
-          <div class="sb-title">STATUS</div>
-          <div class="sb-kpis">
-            <div class="sb-kpi">
-              <div class="sb-kpi-label">RANK</div>
-              <div id="${DOM_IDS.rank}" class="sb-kpi-value">--</div>
-            </div>
-            <div class="sb-kpi">
-              <div class="sb-kpi-label">CARDS</div>
-              <div id="${DOM_IDS.owned}" class="sb-kpi-value">--</div>
-            </div>
-          </div>
-          <div id="${DOM_IDS.hint}" class="sb-hint"></div>
-        </div>
-        <div class="sb-right">
-          <button id="${DOM_IDS.reload}" class="sb-btn" type="button">↻</button>
-        </div>
-      </div>
-      <div id="${DOM_IDS.detail}" class="sb-detail" aria-live="polite"></div>
-    `;
-
-    // Insert near top of main if exists, else body
-    const main = document.querySelector("main");
-    if (main) main.prepend(bar);
-    else document.body.prepend(bar);
-
-    return bar;
-  }
-
-  function setText(id, text) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
-  }
-
-  function setHtml(id, html) {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = html;
+  function writeHtml(id, html) {
+    const node = el(id);
+    if (node) node.innerHTML = html;
   }
 
   function escapeHtml(s) {
@@ -174,78 +167,301 @@
       .replace(/'/g, "&#39;");
   }
 
-  function render() {
-    ensureBar();
-
-    const { counts, sourceKey } = loadCounts();
-    const { ownedTypes, ownedTotal, sanitized } = summarize(counts);
-
-    const rank = calcRank(ownedTypes);
-    setText(DOM_IDS.rank, rank);
-    setText(DOM_IDS.owned, `${ownedTypes}種 / ${ownedTotal}枚`);
-
-    // Hint text
-    if (!storageAvailable()) {
-      setText(DOM_IDS.hint, "この環境では保存領域にアクセスできません（プライベート設定等）。");
-    } else if (!sourceKey) {
-      setText(
-        DOM_IDS.hint,
-        "まだカードデータがありません。kobun-quiz / bungakusi-quiz をプレイすると反映されます。"
-      );
-    } else if (sourceKey !== KEY_CARD_COUNTS) {
-      setText(
-        DOM_IDS.hint,
-        `注意：旧キー（${sourceKey}）から読んでいます。共通キーへ統一すると安定します。`
-      );
-    } else {
-      setText(DOM_IDS.hint, "同一端末の学習データを表示中（共通キー）。");
+  function calcRank(ownedTypes) {
+    let cur = RANK_TABLE[0].name;
+    for (const row of RANK_TABLE) {
+      if (ownedTypes >= row.min) cur = row.name;
     }
-
-    // Detail list (top N by count)
-    const entries = Object.entries(sanitized)
-      .sort((a, b) => Number(b[1]) - Number(a[1]))
-      .slice(0, 8);
-
-    const detailHtml = entries.length
-      ? `
-        <div class="sb-detail-head">TOP所持</div>
-        <div class="sb-chips">
-          ${entries
-            .map(([id, n]) => `<span class="sb-chip">#${escapeHtml(id)} ×${escapeHtml(n)}</span>`)
-            .join("")}
-        </div>
-        <div class="sb-detail-foot">※カード名は図鑑側で解決（ここではIDのみ表示）</div>
-      `
-      : `<div class="sb-detail-empty">所持データなし</div>`;
-
-    setHtml(DOM_IDS.detail, detailHtml);
+    return cur;
   }
 
-  // ===== Bindings =====
-  function bind() {
-    // Reload button
-    const btn = document.getElementById(DOM_IDS.reload);
+  function summarizeCounts(countsObj) {
+    const sanitized = {};
+    let ownedTypes = 0;
+    let ownedTotal = 0;
+
+    for (const [id, rawN] of Object.entries(countsObj || {})) {
+      const n = Number(rawN);
+      if (!Number.isFinite(n) || n <= 0) continue;
+      const k = String(id).trim();
+      if (!k) continue;
+      const v = Math.floor(n);
+      sanitized[k] = v;
+      ownedTypes += 1;
+      ownedTotal += v;
+    }
+
+    return { sanitized, ownedTypes, ownedTotal };
+  }
+
+  function topEntries(sanitized, n = 8) {
+    return Object.entries(sanitized || {})
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, n);
+  }
+
+  // =========================
+  // STATUS: localStorage only (source of truth)
+  // =========================
+
+  function renderStatusFromLocalStorage() {
+    ensureStatusBar();
+
+    if (!storageAvailable()) {
+      writeText(IDS.rank, "--");
+      writeText(IDS.owned, "--");
+      writeText(IDS.hint, "この環境では保存領域にアクセスできません（プライベート設定等）。");
+      writeHtml(IDS.detail, `<div class="sb-detail-empty">所持データなし</div>`);
+      return;
+    }
+
+    const counts = readJsonFromLocalStorage(KEY_CARD_COUNTS) || {};
+    const { sanitized, ownedTypes, ownedTotal } = summarizeCounts(counts);
+
+    const rank = calcRank(ownedTypes);
+    writeText(IDS.rank, rank);
+    writeText(IDS.owned, `${ownedTypes}種 / ${ownedTotal}枚`);
+
+    if (!Object.keys(sanitized).length) {
+      writeText(IDS.hint, "まだカードデータがありません。クイズでカードを獲得すると反映されます。");
+      writeHtml(IDS.detail, `<div class="sb-detail-empty">所持データなし</div>`);
+      return;
+    }
+
+    writeText(IDS.hint, "同一端末の学習データを表示中（共通キー）。");
+
+    const chips = topEntries(sanitized, 8)
+      .map(([id, n]) => `<span class="sb-chip">#${escapeHtml(id)} ×${escapeHtml(n)}</span>`)
+      .join("");
+
+    writeHtml(
+      IDS.detail,
+      `
+        <div class="sb-detail-head">TOP所持</div>
+        <div class="sb-chips">${chips}</div>
+        <div class="sb-detail-foot">※カード名は図鑑側で解決（ここではIDのみ表示）</div>
+      `
+    );
+  }
+
+  // =========================
+  // OPTIONAL: cards-hub totals (manifest + csv)
+  // - This does NOT affect STATUS itself.
+  // - It is just "nice-to-have" info or diagnostics.
+  // =========================
+
+  function pickFirstString(...vals) {
+    for (const v of vals) {
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return null;
+  }
+
+  // Multi-schema resolver: find "cards csv path" in many possible keys.
+  function resolveCardsCsvPath(manifest) {
+    const m = manifest || {};
+
+    // Candidate keys (add more if needed)
+    const p =
+      pickFirstString(
+        m?.sources?.csv,
+        m?.sources?.cardsCsv,
+        m?.sources?.cards_csv,
+        m?.csv,
+        m?.cardsCsv,
+        m?.cards_csv,
+        m?.cards?.csv,
+        m?.cards?.cardsCsv,
+        m?.files?.csv,
+        m?.paths?.csv,
+        m?.paths?.cardsCsv
+      );
+
+    if (!p) {
+      throw new Error("cards-manifest.json: sources/csv not found");
+    }
+    return p;
+  }
+
+  // CSV loader (expects header row)
+  async function fetchCsvObjects(csvUrl) {
+    const res = await fetch(csvUrl, { cache: "no-store" });
+    if (!res.ok) throw new Error(`cards csv fetch failed: ${res.status}`);
+    const text = await res.text();
+
+    const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(l => l.trim().length);
+    if (!lines.length) return [];
+    const header = splitCsvLine(lines[0]);
+    const rows = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = splitCsvLine(lines[i]);
+      const obj = {};
+      for (let j = 0; j < header.length; j++) {
+        obj[String(header[j] || "").trim()] = String(cols[j] ?? "").trim();
+      }
+      rows.push(obj);
+    }
+    return rows;
+  }
+
+  // Minimal CSV line splitter (quotes supported)
+  function splitCsvLine(line) {
+    const out = [];
+    let cur = "";
+    let inQ = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+
+      if (inQ) {
+        if (ch === '"') {
+          // escaped quote
+          if (line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQ = false;
+          }
+        } else {
+          cur += ch;
+        }
+      } else {
+        if (ch === ",") {
+          out.push(cur);
+          cur = "";
+        } else if (ch === '"') {
+          inQ = true;
+        } else {
+          cur += ch;
+        }
+      }
+    }
+    out.push(cur);
+    return out;
+  }
+
+  async function computeTotalsFromCardsHub() {
+    // This function is "optional".
+    // If it fails, we do NOT break the page; just log and continue.
+
+    const manifestUrl = new URL(CARDS_MANIFEST_PATH, new URL(CARDS_HUB_BASE, location.origin)).toString();
+
+    const mRes = await fetch(manifestUrl, { cache: "no-store" });
+    if (!mRes.ok) throw new Error(`cards-manifest.json fetch failed: ${mRes.status}`);
+
+    const manifest = await mRes.json();
+
+    // ✅ multi-schema resolution
+    const csvPath = resolveCardsCsvPath(manifest);
+
+    // Make absolute: relative path should be relative to cards-hub base
+    const csvUrl = new URL(csvPath, new URL(CARDS_HUB_BASE, location.origin)).toString();
+
+    const rows = await fetchCsvObjects(csvUrl);
+
+    // Count by rarity if available
+    let total = 0, s3 = 0, s4 = 0, s5 = 0;
+    for (const r of rows) {
+      total++;
+      const rarity = Number(r.rarity ?? r.star ?? r.stars ?? r.Rarity ?? "");
+      if (rarity === 3) s3++;
+      else if (rarity === 4) s4++;
+      else if (rarity === 5) s5++;
+    }
+
+    return { total, s3, s4, s5, csvUrl, manifestUrl };
+  }
+
+  // =========================
+  // WHAT'S NEW (404 safe)
+  // =========================
+
+  async function loadWhatsNew() {
+    const box = ensureWhatsNewBox();
+    const body = box.querySelector("#wnBody");
+    if (!body) return;
+
+    try {
+      const res = await fetch(WHATSNEW_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error(`whatsnew.json fetch failed: ${res.status}`);
+      const json = await res.json();
+
+      const items = Array.isArray(json.items) ? json.items : [];
+      if (!items.length) {
+        body.innerHTML = `<div class="wn-item muted">更新情報はまだありません。</div>`;
+        return;
+      }
+
+      const html = items.slice(0, 6).map((it) => {
+        const date = escapeHtml(it.date ?? "");
+        const title = escapeHtml(it.title ?? "");
+        const txt = escapeHtml(it.body ?? "");
+        return `
+          <div class="wn-item">
+            <div class="wn-date">${date}</div>
+            <div class="wn-ttl">${title}</div>
+            <div class="wn-txt">${txt}</div>
+          </div>
+        `;
+      }).join("");
+
+      body.innerHTML = html;
+    } catch (e) {
+      // 404 etc: do not break
+      body.innerHTML = `<div class="wn-item muted">更新情報を取得できません（未配置の可能性）</div>`;
+      console.warn("[home.js] whatsnew fallback:", e);
+    }
+  }
+
+  // =========================
+  // BOOT
+  // =========================
+
+  function bindEvents() {
+    const btn = el(IDS.reload);
     if (btn) {
-      btn.addEventListener("click", () => {
-        render();
+      btn.addEventListener("click", async () => {
+        try {
+          renderStatusFromLocalStorage();
+          await loadWhatsNew();
+        } catch (_) {}
       });
     }
 
-    // Update when storage changes (same-origin only)
+    // storage update (same-origin only)
     window.addEventListener("storage", (e) => {
-      if (!e) return;
-      if (e.key === KEY_CARD_COUNTS) render();
+      if (e && e.key === KEY_CARD_COUNTS) renderStatusFromLocalStorage();
     });
 
-    // Update when page becomes visible again
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") render();
+      if (document.visibilityState === "visible") renderStatusFromLocalStorage();
     });
   }
 
-  // ===== Boot =====
+  async function boot() {
+    // 1) status (always)
+    renderStatusFromLocalStorage();
+
+    // 2) whats new (optional)
+    await loadWhatsNew();
+
+    // 3) cards-hub totals (optional diagnostics)
+    try {
+      const t = await computeTotalsFromCardsHub();
+      // Optional: expose to console for quick inspection
+      console.log(`[home.js] cards-hub totals: total=${t.total} / ★3=${t.s3} ★4=${t.s4} ★5=${t.s5}`);
+      console.log(`[home.js] cards-hub sources: manifest=${t.manifestUrl} csv=${t.csvUrl}`);
+    } catch (e) {
+      // This is your current warning source; we keep it but do not break rendering.
+      console.warn("[home.js] fallback:", e);
+    }
+
+    bindEvents();
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
-    render();
-    bind();
+    boot().catch((e) => console.error("[home.js] boot failed:", e));
   });
+
 })();
