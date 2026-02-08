@@ -1,82 +1,105 @@
 // sw.js (kokugo-dojo)
-// Update-safe strategy:
-// - HTML: Network-first (fallback to cache)
-// - Static assets: Cache-first + stale-while-revalidate
-// - cards-hub JSON/CSV: Network-first (avoid stale status bar)
-// - Versioned cache name (MUST bump on release)
+// Update-safe strategy (assets/なし想定):
+// - Install: "best-effort" precache (404が混じっても落ちない)
+// - HTML navigation: Network-first (fallback to cached index.html)
+// - Same-origin static: Cache-first + background revalidate
+// - cards-hub JSON/CSV: Network-first (avoid stale STATUS)
+// - IMPORTANT: bump CACHE_NAME on releases
 
-const CACHE_NAME = "hk-dojo-v2026-02-08-01";
+const CACHE_NAME = "hk-dojo-v2026-02-08-02";
 
-// Precache: "this repo" critical files only
+// ✅ assets/ が無い前提：存在が確実なものだけ
+// ※ home.css は無い運用もあるので、best-effort precache で吸収します
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
-  "./home.css",
   "./home.js",
+  "./home.css",
   "./manifest.json",
 
-  // images (adjust to your actual filenames)
-  "./assets/top.jpg",
-
-  // icons (adjust to what exists)
+  // icons が無い/名前違いでも install が死なないよう best-effort で扱う
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-192.png",
   "./icons/icon-maskable-512.png",
 ];
 
-// ---- install: precache + activate new SW immediately
+// -------------------------
+// best-effort precache
+// -------------------------
+async function precacheBestEffort(cache, urls) {
+  // 404などが混ざっても全体を失敗させない
+  const tasks = urls.map(async (u) => {
+    try {
+      const req = new Request(u, { cache: "no-store" });
+      const res = await fetch(req);
+      if (!res.ok) throw new Error(`precache skip: ${res.status} ${u}`);
+      await cache.put(req, res.clone());
+    } catch (e) {
+      // ここで落とさないのが重要
+      // console.warn("[SW] precache skipped:", e);
+    }
+  });
+  await Promise.all(tasks);
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(ASSETS))
-      .then(() => self.skipWaiting())
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+      await precacheBestEffort(cache, ASSETS);
+      await self.skipWaiting();
+    })()
   );
 });
 
-// ---- activate: remove old caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.map((k) => (k === CACHE_NAME ? null : caches.delete(k)))))
-      .then(() => self.clients.claim())
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => (k === CACHE_NAME ? null : caches.delete(k))));
+      await self.clients.claim();
+    })()
   );
 });
 
-// ---- helpers
+// -------------------------
+// helpers
+// -------------------------
 function isSameOrigin(url) {
   try { return new URL(url).origin === self.location.origin; } catch { return false; }
 }
+
 function isCardsHubJsonOrCsv(url) {
   try {
     const u = new URL(url);
-    // controlled pages can fetch across paths; we only special-case cards-hub data
     const isCardsHub = u.origin === self.location.origin && u.pathname.startsWith("/cards-hub/");
     if (!isCardsHub) return false;
-    return (
-      u.pathname.endsWith(".json") ||
-      u.pathname.endsWith(".csv")
-    );
+    return u.pathname.endsWith(".json") || u.pathname.endsWith(".csv");
   } catch {
     return false;
   }
 }
 
-// ---- fetch strategies
+async function cachePutSafe(req, res) {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(req, res.clone());
+  } catch (_) {}
+}
+
 async function networkFirst(req, { fallbackUrl } = {}) {
   try {
     const res = await fetch(req, { cache: "no-store" });
-    // update cache for same-origin GET
     if (req.method === "GET" && isSameOrigin(req.url)) {
-      const copy = res.clone();
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(req, copy);
+      await cachePutSafe(req, res);
     }
     return res;
   } catch (e) {
     const cached = await caches.match(req);
     if (cached) return cached;
+
     if (fallbackUrl) {
       const fb = await caches.match(fallbackUrl);
       if (fb) return fb;
@@ -85,88 +108,43 @@ async function networkFirst(req, { fallbackUrl } = {}) {
   }
 }
 
-async function cacheFirstStaleRevalidate(req) {
-  const cached = await caches.match(req);
-  const fetchPromise = (async () => {
-    try {
-      const res = await fetch(req);
-      if (req.method === "GET" && isSameOrigin(req.url)) {
-        const copy = res.clone();
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, copy);
-      }
-      return res;
-    } catch {
-      return null;
-    }
-  })();
-
-  // Return cache immediately, update in background
-  if (cached) {
-    eventWait(fetchPromise); // best-effort background update
-    return cached;
-  }
-
-  // Otherwise wait network
-  const net = await fetchPromise;
-  if (net) return net;
-
-  // final fallback
-  return caches.match("./index.html");
-}
-
-// Helper: keep SW alive for background update (safe no-op if no event context)
-function eventWait(p) {
-  try {
-    // `self.___lastFetchEvent` is set below; if missing, do nothing
-    if (self.___lastFetchEvent && typeof self.___lastFetchEvent.waitUntil === "function") {
-      self.___lastFetchEvent.waitUntil(Promise.resolve(p));
-    }
-  } catch (_) {}
-}
-
 self.addEventListener("fetch", (event) => {
-  self.___lastFetchEvent = event;
-
   const req = event.request;
-
-  // Only handle GET
   if (req.method !== "GET") return;
 
-  // HTML navigation: network-first, fallback to cached index.html
+  // 1) ナビゲーション（HTML）：network-first（更新反映優先）
   if (req.mode === "navigate") {
     event.respondWith(networkFirst(req, { fallbackUrl: "./index.html" }));
     return;
   }
 
-  // Avoid staleness for cards-hub data used by STATUS BAR
+  // 2) STATUS用の cards-hub json/csv は network-first（古いデータ固定を防ぐ）
   if (isCardsHubJsonOrCsv(req.url)) {
     event.respondWith(networkFirst(req));
     return;
   }
 
-  // Same-origin static: cache-first + background refresh
+  // 3) 同一オリジンの静的ファイル：cache-first + 背景更新
   if (isSameOrigin(req.url)) {
     event.respondWith((async () => {
       const cached = await caches.match(req);
       if (cached) {
-        // background revalidate
+        // 背景で再取得してキャッシュ更新
         event.waitUntil(
           fetch(req)
-            .then((res) => caches.open(CACHE_NAME).then((c) => c.put(req, res.clone())).catch(() => {}))
+            .then((res) => cachePutSafe(req, res))
             .catch(() => {})
         );
         return cached;
       }
-      // no cache -> fetch and store
+
+      // 未キャッシュなら取りに行って保存
       const res = await fetch(req);
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(req, res.clone());
+      await cachePutSafe(req, res);
       return res;
     })());
     return;
   }
 
-  // Cross-origin: pass-through (no caching)
-  // (If you ever add external CDNs, this avoids opaque-cache gotchas)
+  // 4) クロスオリジンは素通し（キャッシュしない）
 });
