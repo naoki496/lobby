@@ -434,32 +434,7 @@ function ensureWhatsNewBox() {
     const body = box.querySelector("#wnBody");
     if (!body) return;
 
-    try {
-      const res = await fetch(WHATSNEW_URL, { cache: "no-store" });
-      if (!res.ok) throw new Error(`whatsnew.json fetch failed: ${res.status}`);
-      const json = await res.json();
-
-      const items = Array.isArray(json.items) ? json.items : [];
-      if (!items.length) {
-        body.innerHTML = `<div class="wn-item muted">更新情報はまだありません。</div>`;
-        return;
-      }
-
-      const html = items.slice(0, 6).map((it) => {
-        const date = escapeHtml(it.date ?? "");
-        const title = escapeHtml(it.title ?? "");
-        const txt = escapeHtml(it.body ?? "");
-        return `
-          <div class="wn-item">
-            <div class="wn-date">${date}</div>
-            <div class="wn-ttl">${title}</div>
-            <div class="wn-txt">${txt}</div>
-          </div>
-        `;
-      }).join("");
-
-      body.innerHTML = html;
-    } catch (e) {
+   
       // 404 etc: do not break
       body.innerHTML = `<div class="wn-item muted">更新情報を取得できません（未配置の可能性）</div>`;
       console.warn("[home.js] whatsnew fallback:", e);
