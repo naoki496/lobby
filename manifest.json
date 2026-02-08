@@ -2,30 +2,30 @@
   "name": "八東国語DOJO",
   "short_name": "国語DOJO",
   "description": "八東国語の学習ポータル（Flashcard / BLITZ QUEST / カード図鑑）",
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": "/lobby/index.html",
+  "scope": "/lobby/",
   "display": "standalone",
   "background_color": "#05060c",
   "theme_color": "#0b0f19",
   "icons": [
     {
-      "src": "./icons/icon-192.png",
+      "src": "/lobby/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "./icons/icon-512.png",
+      "src": "/lobby/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "./icons/icon-maskable-192.png",
+      "src": "/lobby/icons/icon-maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "./icons/icon-maskable-512.png",
+      "src": "/lobby/icons/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
