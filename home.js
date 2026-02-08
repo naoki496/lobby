@@ -463,15 +463,16 @@
     // 2) whats new (optional)
     await loadWhatsNew();
 
-    // 3) cards-hub totals (optional diagnostics)
+    // 3) cards-manifest.json は lobby には置かない運用：存在する時だけ診断する
     try {
-      const t = await computeTotalsFromCardsHub();
-      // Optional: expose to console for quick inspection
-      console.log(`[home.js] cards-hub totals: total=${t.total} / ★3=${t.s3} ★4=${t.s4} ★5=${t.s5}`);
-      console.log(`[home.js] cards-hub sources: manifest=${t.manifestUrl} csv=${t.csvUrl}`);
+      const res = await fetch("./cards-manifest.json", { cache: "no-store" });
+      if (res.ok) {
+        // ここで初めて computeTotalsFromCardsHub を走らせる（必要なら）
+        const t = await computeTotalsFromCardsHub();
+        console.log(`[home.js] cards totals: total=${t.total} / ★3=${t.s3} ★4=${t.s4} ★5=${t.s5}`);
+      }
     } catch (e) {
-      // This is your current warning source; we keep it but do not break rendering.
-      console.warn("[home.js] fallback:", e);
+      // 404 は想定内なので黙る（ログ汚染防止）
     }
 
     bindEvents();
