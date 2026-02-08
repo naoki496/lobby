@@ -90,20 +90,12 @@
     return bar;
   }
 
-  function ensureWhatsNewBox() {
-    const existing = el(IDS.whatsnew);
-    if (existing) return existing;
-
-    // If index has a placeholder, prefer it.
-    const mount = qs("#missionBrief") || qs(".mission-brief") || qs("main") || document.body;
-
-    const box = document.createElement("section");
-    box.id = IDS.whatsnew;
-    box.className = "wn-box";
-    box.setAttribute("role", "region");
-    box.setAttribute("aria-label", "MISSION BRIEF");
-
-    box.innerHTML = `
+function ensureWhatsNewBox() {
+  // ✅ index.html の #missionBrief を “唯一の表示場所” にする
+  const existing = el("missionBrief");
+  if (existing) {
+    // 中身を home.js 用に置き換え
+    existing.innerHTML = `
       <div class="wn-head">
         <div class="wn-title">MISSION BRIEF</div>
         <div class="wn-sub">WHAT'S NEW</div>
@@ -112,14 +104,29 @@
         <div class="wn-item muted">更新情報を読み込み中…</div>
       </div>
     `;
-
-    // Try: insert near top but after status bar if exists
-    const sb = el(IDS.bar);
-    if (sb && sb.parentElement) sb.insertAdjacentElement("afterend", box);
-    else mount.insertAdjacentElement("afterbegin", box);
-
-    return box;
+    return existing;
   }
+
+  // （保険）missionBrief が無い場合だけ自動生成
+  const mount = qs("main") || document.body;
+  const box = document.createElement("section");
+  box.id = IDS.whatsnew;
+  box.className = "wn-box";
+  box.setAttribute("role", "region");
+  box.setAttribute("aria-label", "MISSION BRIEF");
+  box.innerHTML = `
+    <div class="wn-head">
+      <div class="wn-title">MISSION BRIEF</div>
+      <div class="wn-sub">WHAT'S NEW</div>
+    </div>
+    <div class="wn-body" id="wnBody">
+      <div class="wn-item muted">更新情報を読み込み中…</div>
+    </div>
+  `;
+  mount.insertAdjacentElement("afterbegin", box);
+  return box;
+}
+
 
   // =========================
   // UTIL
