@@ -6,10 +6,9 @@
 // - cards-hub JSON/CSV: Network-first (avoid stale STATUS)
 // - IMPORTANT: bump CACHE_NAME on releases
 
-const CACHE_NAME = "hk-dojo-v2026-02-08-02";
+const CACHE_NAME = "hk-dojo-v2026-02-08-03";
 
-// ✅ assets/ が無い前提：存在が確実なものだけ
-// ※ home.css は無い運用もあるので、best-effort precache で吸収します
+// ✅ 存在が確実なもの中心（404でも死なないbest-effort）
 const ASSETS = [
   "./",
   "./index.html",
@@ -18,7 +17,10 @@ const ASSETS = [
   "./home.css",
   "./manifest.json",
 
-  // icons が無い/名前違いでも install が死なないよう best-effort で扱う
+  // ✅ トップ画像（repo直下に置く前提）
+  "./H.K.LOBBY.png",
+
+  // icons（無い/名前違いでも install が死なない）
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-192.png",
@@ -29,16 +31,14 @@ const ASSETS = [
 // best-effort precache
 // -------------------------
 async function precacheBestEffort(cache, urls) {
-  // 404などが混ざっても全体を失敗させない
   const tasks = urls.map(async (u) => {
     try {
       const req = new Request(u, { cache: "no-store" });
       const res = await fetch(req);
       if (!res.ok) throw new Error(`precache skip: ${res.status} ${u}`);
       await cache.put(req, res.clone());
-    } catch (e) {
-      // ここで落とさないのが重要
-      // console.warn("[SW] precache skipped:", e);
+    } catch (_) {
+      // 404等が混じっても落とさない
     }
   });
   await Promise.all(tasks);
@@ -129,7 +129,6 @@ self.addEventListener("fetch", (event) => {
     event.respondWith((async () => {
       const cached = await caches.match(req);
       if (cached) {
-        // 背景で再取得してキャッシュ更新
         event.waitUntil(
           fetch(req)
             .then((res) => cachePutSafe(req, res))
@@ -138,7 +137,6 @@ self.addEventListener("fetch", (event) => {
         return cached;
       }
 
-      // 未キャッシュなら取りに行って保存
       const res = await fetch(req);
       await cachePutSafe(req, res);
       return res;
