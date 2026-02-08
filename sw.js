@@ -6,7 +6,7 @@
 // - cards-hub manifest/json/csv (if fetched): Network-first (avoid stale STATUS-like data)
 // - IMPORTANT: bump CACHE_NAME on releases
 
-const CACHE_NAME = "hk-dojo-v2026-02-08-03";
+const CACHE_NAME = "hk-dojo-v2026-02-08-04";
 
 // ✅ 存在が確実なもの中心（404でも死なないbest-effort）
 const ASSETS = [
