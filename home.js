@@ -52,7 +52,35 @@
 
   function ensureStatusBar() {
     const existing = el(IDS.bar);
-    if (existing) return existing;
+if (existing) {
+  // ✅ 空なら中身を注入して使う（indexに枠があってもOKにする）
+  if (!existing.querySelector(".sb-inner")) {
+    existing.innerHTML = `
+      <div class="sb-inner">
+        <div class="sb-left">
+          <div class="sb-title">STATUS</div>
+          <div class="sb-kpis">
+            <div class="sb-kpi">
+              <div class="sb-kpi-label">RANK</div>
+              <div id="${IDS.rank}" class="sb-kpi-value">--</div>
+            </div>
+            <div class="sb-kpi">
+              <div class="sb-kpi-label">CARDS</div>
+              <div id="${IDS.owned}" class="sb-kpi-value">--</div>
+            </div>
+          </div>
+          <div id="${IDS.hint}" class="sb-hint"></div>
+        </div>
+        <div class="sb-right">
+          <button id="${IDS.reload}" class="sb-btn" type="button" aria-label="再読み込み">↻</button>
+        </div>
+      </div>
+      <div id="${IDS.detail}" class="sb-detail" aria-live="polite"></div>
+    `;
+  }
+  return existing;
+}
+
 
     const bar = document.createElement("section");
     bar.id = IDS.bar;
