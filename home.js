@@ -225,7 +225,32 @@ if (existing) {
   // =========================
 
   function renderStatusFromLocalStorage() {
-    ensureStatusBar();
+  const bar = document.getElementById("statusBar");
+  if (!bar) return;
+
+  bar.innerHTML = `
+    <div class="sb-inner">
+      <div class="sb-left">
+        <div class="sb-title">STATUS</div>
+        <div class="sb-kpis">
+          <div class="sb-kpi">
+            <div class="sb-kpi-label">RANK</div>
+            <div id="statusRank" class="sb-kpi-value">--</div>
+          </div>
+          <div class="sb-kpi">
+            <div class="sb-kpi-label">CARDS</div>
+            <div id="statusOwned" class="sb-kpi-value">--</div>
+          </div>
+        </div>
+        <div id="statusHint" class="sb-hint"></div>
+      </div>
+      <div class="sb-right">
+        <button id="statusReload" class="sb-btn" type="button">↻</button>
+      </div>
+    </div>
+    <div id="statusDetail" class="sb-detail"></div>
+  `;
+
 
     if (!storageAvailable()) {
       writeText(IDS.rank, "--");
@@ -414,9 +439,17 @@ if (existing) {
   // WHAT'S NEW (404 safe)
   // =========================
 
-  async function loadWhatsNew() {
+async function loadWhatsNew() {
   const box = document.getElementById("missionBrief");
   if (!box) return;
+
+  box.innerHTML = `
+    <h2>MISSION BRIEF</h2>
+    <div class="wn-body" id="wnBody">
+      <div class="wn-item muted">更新情報を読み込み中…</div>
+    </div>
+  `;
+
 
   // 初期プレースホルダをクリア
   box.innerHTML = `
