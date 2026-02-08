@@ -17,9 +17,8 @@
   <!-- Optional: home.js専用CSSを分離する場合 -->
   <link rel="stylesheet" href="./home.css" />
 
-  <!-- tiny inline fallback for layout safety (scoped, minimal) -->
+  <!-- minimal fallback (layout safety only) -->
   <style>
-    /* この最小CSSは「壊れないための保険」。本体のデザインは style.css / home.css に任せます。 */
     body{ margin:0; background:#05060c; color:#eef; }
     .wrap{ max-width:1080px; margin:0 auto; padding:18px 14px 42px; }
     header.hero{ border-radius:18px; overflow:hidden; position:relative; }
@@ -76,6 +75,7 @@
       font-weight:800;
       letter-spacing:.02em;
       padding: 10px 12px;
+      text-align:center;
     }
     .a:hover{ filter:brightness(1.05); transform:translateY(-1px); }
     .a:active{ transform:translateY(0); }
@@ -90,7 +90,7 @@
   <div class="wrap">
     <!-- TOP IMAGE -->
     <header class="hero" aria-label="トップ">
-      <!-- ここはあなたの任意画像に差し替え -->
+      <!-- 任意画像に差し替え（存在しない場合は 404 になります） -->
       <img src="./assets/top.jpg" alt="八東国語DOJO" loading="eager" />
       <div class="hero-overlay"></div>
       <div class="hero-text">
@@ -99,11 +99,11 @@
       </div>
     </header>
 
-    <!-- STATUS (home.js が描画) -->
+    <!-- STATUS (home.jsが描画) -->
     <section id="statusBar" aria-label="ステータス"></section>
 
     <div class="grid">
-      <!-- MISSION BRIEF (home.js が描画) -->
+      <!-- MISSION BRIEF (home.jsが描画) -->
       <section id="missionBrief" class="card" aria-label="ミッションブリーフ">
         <h2>MISSION BRIEF</h2>
         <p>読み込み中…</p>
@@ -115,11 +115,9 @@
         <p>スキマ時間で基礎を固める。反復が正義です。</p>
 
         <div class="links" role="list">
-          <!-- ▼▼▼ ここは実URLに差し替えてください ▼▼▼ -->
           <a class="a" role="listitem" href="https://naoki496.github.io/flashcards/" rel="noopener">古文単語</a>
-          <a class="a" role="listitem" href="https://naoki496.github.io/hatto-kobun-jodoushi/" rel="noopener">助動詞</a>
-          <a class="a" role="listitem" href="https://naoki496.github.io/bungakusi-flashcards/" rel="noopener">文学史総合</a>
-          <!-- ▲▲▲ ここは実URLに差し替えてください ▲▲▲ -->
+          <a class="a" role="listitem" href="https://naoki496.github.io/hatto-kobun-jodoushi/" rel="noopener">古文助動詞</a>
+          <a class="a" role="listitem" href="https://naoki496.github.io/bungaku/" rel="noopener">文学知識総合</a>
         </div>
       </section>
 
@@ -130,8 +128,8 @@
 
         <div class="links" role="list">
           <a class="a" role="listitem" href="https://naoki496.github.io/cards-hub/" rel="noopener">カード図鑑</a>
-          <a class="a" role="listitem" href="https://naoki496.github.io/kobun-quiz/" rel="noopener">古文クイズ</a>
-          <a class="a" role="listitem" href="https://naoki496.github.io/bungakusi-quiz/" rel="noopener">文学史クイズ</a>
+          <a class="a" role="listitem" href="https://naoki496.github.io/kobun-quiz/" rel="noopener">古文単語330マスター</a>
+          <a class="a" role="listitem" href="https://naoki496.github.io/bungakusi-quiz/" rel="noopener">文学史知識マスター</a>
         </div>
       </section>
     </div>
@@ -149,14 +147,11 @@
     (function(){
       if (!("serviceWorker" in navigator)) return;
 
-      // sw.js がある前提。無い場合は何もしない。
       window.addEventListener("load", async () => {
         try{
           const reg = await navigator.serviceWorker.register("./sw.js");
-          // 更新検知を促進（ただし強制リロードはしない）
           if (reg && reg.update) reg.update();
         }catch(e){
-          // 静かに握る：ポータル自体は表示できれば勝ち
           console.warn("[SW] register failed:", e);
         }
       });
