@@ -118,22 +118,7 @@ if (existing) {
     return bar;
   }
 
-function ensureWhatsNewBox() {
-  // ✅ index.html の #missionBrief を “唯一の表示場所” にする
-  const existing = el("missionBrief");
-  if (existing) {
-    // 中身を home.js 用に置き換え
-    existing.innerHTML = `
-      <div class="wn-head">
-        <div class="wn-title">MISSION BRIEF</div>
-        <div class="wn-sub">WHAT'S NEW</div>
-      </div>
-      <div class="wn-body" id="wnBody">
-        <div class="wn-item muted">更新情報を読み込み中…</div>
-      </div>
-    `;
-    return existing;
-  }
+
 
   // （保険）missionBrief が無い場合だけ自動生成
   const mount = qs("main") || document.body;
@@ -430,16 +415,48 @@ function ensureWhatsNewBox() {
   // =========================
 
   async function loadWhatsNew() {
-    const box = ensureWhatsNewBox();
-    const body = box.querySelector("#wnBody");
-    if (!body) return;
+  const box = document.getElementById("missionBrief");
+  if (!box) return;
 
-   
-      // 404 etc: do not break
-      body.innerHTML = `<div class="wn-item muted">更新情報を取得できません（未配置の可能性）</div>`;
-      console.warn("[home.js] whatsnew fallback:", e);
+  // 初期プレースホルダをクリア
+  box.innerHTML = `
+    <div class="wn-head">
+      <div class="wn-title">MISSION BRIEF</div>
+      <div class="wn-sub">WHAT'S NEW</div>
+    </div>
+    <div class="wn-body" id="wnBody">
+      <div class="wn-item muted">更新情報を読み込み中…</div>
+    </div>
+  `;
+
+  const body = box.querySelector("#wnBody");
+  if (!body) return;
+
+  try {
+    const res = await fetch("./whatsnew.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`whatsnew.json fetch failed: ${res.status}`);
+    const json = await res.json();
+
+    const items = Array.isArray(json.items) ? json.items : [];
+    if (!items.length) {
+      body.innerHTML = `<div class="wn-item muted">更新情報はまだありません。</div>`;
+      return;
     }
+
+    body.innerHTML = items.slice(0, 6).map((it) => `
+      <div class="wn-item">
+        <div class="wn-date">${escapeHtml(it.date ?? "")}</div>
+        <div class="wn-ttl">${escapeHtml(it.title ?? "")}</div>
+        <div class="wn-txt">${escapeHtml(it.body ?? "")}</div>
+      </div>
+    `).join("");
+
+  } catch (e) {
+    body.innerHTML = `<div class="wn-item muted">更新情報を取得できません</div>`;
+    console.warn("[home.js] whatsnew fallback:", e);
   }
+}
+
 
   // =========================
   // BOOT
