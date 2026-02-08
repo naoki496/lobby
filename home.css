@@ -1,0 +1,8 @@
+/* home.css (optional) */
+#statusBar { margin: 12px 0; }
+.sb-inner { display:flex; justify-content:space-between; gap:12px; }
+.sb-kpis { display:flex; gap:12px; flex-wrap:wrap; }
+.sb-btn { cursor:pointer; }
+.sb-detail { margin-top:10px; }
+.sb-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.sb-chip { padding:6px 10px; border-radius:999px; }
