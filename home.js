@@ -251,6 +251,10 @@ if (existing) {
     <div id="statusDetail" class="sb-detail"></div>
   `;
 
+  ...
+}
+
+
 
     if (!storageAvailable()) {
       writeText(IDS.rank, "--");
@@ -443,15 +447,7 @@ async function loadWhatsNew() {
   const box = document.getElementById("missionBrief");
   if (!box) return;
 
-  box.innerHTML = `
-    <h2>MISSION BRIEF</h2>
-    <div class="wn-body" id="wnBody">
-      <div class="wn-item muted">更新情報を読み込み中…</div>
-    </div>
-  `;
-
-
-  // 初期プレースホルダをクリア
+  // まず最初に正しい構造で置換
   box.innerHTML = `
     <div class="wn-head">
       <div class="wn-title">MISSION BRIEF</div>
@@ -467,10 +463,13 @@ async function loadWhatsNew() {
 
   try {
     const res = await fetch("./whatsnew.json", { cache: "no-store" });
-    if (!res.ok) throw new Error(`whatsnew.json fetch failed: ${res.status}`);
+    if (!res.ok) {
+      body.innerHTML = `<div class="wn-item muted">更新情報はまだありません。</div>`;
+      return;
+    }
     const json = await res.json();
-
     const items = Array.isArray(json.items) ? json.items : [];
+
     if (!items.length) {
       body.innerHTML = `<div class="wn-item muted">更新情報はまだありません。</div>`;
       return;
@@ -478,15 +477,15 @@ async function loadWhatsNew() {
 
     body.innerHTML = items.slice(0, 6).map((it) => `
       <div class="wn-item">
-        <div class="wn-date">${escapeHtml(it.date ?? "")}</div>
-        <div class="wn-ttl">${escapeHtml(it.title ?? "")}</div>
-        <div class="wn-txt">${escapeHtml(it.body ?? "")}</div>
+        <div class="wn-date">${escapeHtml(it.date)}</div>
+        <div class="wn-ttl">${escapeHtml(it.title)}</div>
+        <div class="wn-txt">${escapeHtml(it.body)}</div>
       </div>
     `).join("");
 
   } catch (e) {
-    body.innerHTML = `<div class="wn-item muted">更新情報を取得できません</div>`;
     console.warn("[home.js] whatsnew fallback:", e);
+    body.innerHTML = `<div class="wn-item muted">更新情報を取得できません</div>`;
   }
 }
 
