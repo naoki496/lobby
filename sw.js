@@ -1,9 +1,9 @@
 // sw.js (kokugo-dojo)
 // Update-safe strategy (assets/なし想定):
-// - Install: "best-effort" precache (404が混じっても落ちない)
+// - Install: best-effort precache (404が混じっても落ちない)
 // - HTML navigation: Network-first (fallback to cached index.html)
 // - Same-origin static: Cache-first + background revalidate
-// - cards-hub JSON/CSV: Network-first (avoid stale STATUS)
+// - cards-hub manifest/json/csv (if fetched): Network-first (avoid stale STATUS-like data)
 // - IMPORTANT: bump CACHE_NAME on releases
 
 const CACHE_NAME = "hk-dojo-v2026-02-08-03";
@@ -17,7 +17,7 @@ const ASSETS = [
   "./home.css",
   "./manifest.json",
 
-  // ✅ トップ画像（repo直下に置く前提）
+  // ✅ トップ画像（repo直下）
   "./H.K.LOBBY.png",
 
   // icons（無い/名前違いでも install が死なない）
@@ -28,14 +28,58 @@ const ASSETS = [
 ];
 
 // -------------------------
+// helpers
+// -------------------------
+function toAbsUrl(u) {
+  try {
+    return new URL(u, self.location).toString();
+  } catch {
+    return u;
+  }
+}
+
+function isSameOrigin(url) {
+  try { return new URL(url).origin === self.location.origin; } catch { return false; }
+}
+
+// 「拡張子で雑に判定」より、将来事故りにくいホワイトリスト寄りに。
+// 現状 home.js は fetchしないので、ここは“保険”。
+// 必要になったらファイル名を追加。
+function isCardsHubFreshTarget(url) {
+  try {
+    const u = new URL(url);
+    if (u.origin !== self.location.origin) return false;
+    if (!u.pathname.startsWith("/cards-hub/")) return false;
+
+    const p = u.pathname;
+    // 例：cards-hub の manifest / csv を読む設計にした場合にだけ効く
+    if (p.endsWith("/cards-manifest.json")) return true;
+    if (p.endsWith(".csv")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function cachePutSafe(req, res) {
+  try {
+    // opaque / error は入れない（事故防止）
+    if (!res || res.type === "opaque" || !res.ok) return;
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(req, res.clone());
+  } catch (_) {}
+}
+
+// -------------------------
 // best-effort precache
 // -------------------------
 async function precacheBestEffort(cache, urls) {
   const tasks = urls.map(async (u) => {
     try {
-      const req = new Request(u, { cache: "no-store" });
+      const abs = toAbsUrl(u);
+      const req = new Request(abs, { cache: "no-store" });
       const res = await fetch(req);
-      if (!res.ok) throw new Error(`precache skip: ${res.status} ${u}`);
+      if (!res.ok) throw new Error(`precache skip: ${res.status} ${abs}`);
       await cache.put(req, res.clone());
     } catch (_) {
       // 404等が混じっても落とさない
@@ -64,31 +108,6 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// -------------------------
-// helpers
-// -------------------------
-function isSameOrigin(url) {
-  try { return new URL(url).origin === self.location.origin; } catch { return false; }
-}
-
-function isCardsHubJsonOrCsv(url) {
-  try {
-    const u = new URL(url);
-    const isCardsHub = u.origin === self.location.origin && u.pathname.startsWith("/cards-hub/");
-    if (!isCardsHub) return false;
-    return u.pathname.endsWith(".json") || u.pathname.endsWith(".csv");
-  } catch {
-    return false;
-  }
-}
-
-async function cachePutSafe(req, res) {
-  try {
-    const cache = await caches.open(CACHE_NAME);
-    await cache.put(req, res.clone());
-  } catch (_) {}
-}
-
 async function networkFirst(req, { fallbackUrl } = {}) {
   try {
     const res = await fetch(req, { cache: "no-store" });
@@ -101,7 +120,7 @@ async function networkFirst(req, { fallbackUrl } = {}) {
     if (cached) return cached;
 
     if (fallbackUrl) {
-      const fb = await caches.match(fallbackUrl);
+      const fb = await caches.match(toAbsUrl(fallbackUrl));
       if (fb) return fb;
     }
     throw e;
@@ -118,8 +137,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 2) STATUS用の cards-hub json/csv は network-first（古いデータ固定を防ぐ）
-  if (isCardsHubJsonOrCsv(req.url)) {
+  // 2) cards-hub の“鮮度優先ターゲット”：network-first
+  if (isCardsHubFreshTarget(req.url)) {
     event.respondWith(networkFirst(req));
     return;
   }
@@ -137,9 +156,16 @@ self.addEventListener("fetch", (event) => {
         return cached;
       }
 
-      const res = await fetch(req);
-      await cachePutSafe(req, res);
-      return res;
+      // キャッシュが無い場合：ネット優先。ただし落ちたら “せめて index.html” へ
+      try {
+        const res = await fetch(req);
+        await cachePutSafe(req, res);
+        return res;
+      } catch (e) {
+        const fb = await caches.match(toAbsUrl("./index.html"));
+        if (fb) return fb;
+        throw e;
+      }
     })());
     return;
   }
