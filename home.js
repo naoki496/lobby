@@ -259,29 +259,31 @@
 
   // Multi-schema resolver: find "cards csv path" in many possible keys.
   function resolveCardsCsvPath(manifest) {
-    const m = manifest || {};
+  const m = manifest || {};
 
-    // Candidate keys (add more if needed)
-    const p =
-      pickFirstString(
-        m?.sources?.csv,
-        m?.sources?.cardsCsv,
-        m?.sources?.cards_csv,
-        m?.csv,
-        m?.cardsCsv,
-        m?.cards_csv,
-        m?.cards?.csv,
-        m?.cards?.cardsCsv,
-        m?.files?.csv,
-        m?.paths?.csv,
-        m?.paths?.cardsCsv
-      );
+  // ✅ あなたの実物スキーマ：sources は配列、各要素に cardsCsv
+  if (Array.isArray(m.sources) && m.sources.length) {
+    const urls = m.sources
+      .map((s) => (typeof s?.cardsCsv === "string" ? s.cardsCsv.trim() : ""))
+      .filter(Boolean);
 
-    if (!p) {
-      throw new Error("cards-manifest.json: sources/csv not found");
-    }
-    return p;
+    if (urls.length) return urls; // ← 配列で返す
   }
+
+  // 互換：単独キーを持つ場合にも対応（保険）
+  const single =
+    pickFirstString(
+      m?.sources?.csv,
+      m?.sources?.cardsCsv,
+      m?.csv,
+      m?.cardsCsv,
+      m?.cards?.csv
+    );
+
+  if (single) return [single]; // 統一して配列で返す
+
+  throw new Error("cards-manifest.json: cardsCsv not found (sources array / keys)");
+}
 
   // CSV loader (expects header row)
   async function fetchCsvObjects(csvUrl) {
@@ -341,37 +343,52 @@
     return out;
   }
 
-  async function computeTotalsFromCardsHub() {
-    // This function is "optional".
-    // If it fails, we do NOT break the page; just log and continue.
+ async function computeTotalsFromCardsHub() {
+  // Optional diagnostics: cards-hub の CSV を合算して総数などを計算する
 
-    const manifestUrl = new URL(CARDS_MANIFEST_PATH, new URL(CARDS_HUB_BASE, location.origin)).toString();
+  const manifestUrl = new URL(
+    CARDS_MANIFEST_PATH,
+    new URL(CARDS_HUB_BASE, location.origin)
+  ).toString();
 
-    const mRes = await fetch(manifestUrl, { cache: "no-store" });
-    if (!mRes.ok) throw new Error(`cards-manifest.json fetch failed: ${mRes.status}`);
+  const mRes = await fetch(manifestUrl, { cache: "no-store" });
+  if (!mRes.ok) throw new Error(`cards-manifest.json fetch failed: ${mRes.status}`);
 
-    const manifest = await mRes.json();
+  const manifest = await mRes.json();
 
-    // ✅ multi-schema resolution
-    const csvPath = resolveCardsCsvPath(manifest);
+  // ✅ あなたのスキーマに合わせて「複数CSV URL」を取得
+  const csvList = resolveCardsCsvPath(manifest); // <- string[] で返ってくる
 
-    // Make absolute: relative path should be relative to cards-hub base
-    const csvUrl = new URL(csvPath, new URL(CARDS_HUB_BASE, location.origin)).toString();
+  // CSV 取得→合算
+  let total = 0, s3 = 0, s4 = 0, s5 = 0;
+
+  const perSource = [];
+
+  for (const csvPath of csvList) {
+    // 絶対URLならそのまま、相対なら cards-hub base から解決
+    const csvUrl = (() => {
+      try { return new URL(csvPath).toString(); } catch { /* not absolute */ }
+      return new URL(csvPath, new URL(CARDS_HUB_BASE, location.origin)).toString();
+    })();
 
     const rows = await fetchCsvObjects(csvUrl);
 
-    // Count by rarity if available
-    let total = 0, s3 = 0, s4 = 0, s5 = 0;
+    let t = 0, a3 = 0, a4 = 0, a5 = 0;
     for (const r of rows) {
-      total++;
+      t++;
       const rarity = Number(r.rarity ?? r.star ?? r.stars ?? r.Rarity ?? "");
-      if (rarity === 3) s3++;
-      else if (rarity === 4) s4++;
-      else if (rarity === 5) s5++;
+      if (rarity === 3) a3++;
+      else if (rarity === 4) a4++;
+      else if (rarity === 5) a5++;
     }
 
-    return { total, s3, s4, s5, csvUrl, manifestUrl };
+    total += t; s3 += a3; s4 += a4; s5 += a5;
+    perSource.push({ csvUrl, total: t, s3: a3, s4: a4, s5: a5 });
   }
+
+  return { manifestUrl, total, s3, s4, s5, perSource };
+}
+
 
   // =========================
   // WHAT'S NEW (404 safe)
